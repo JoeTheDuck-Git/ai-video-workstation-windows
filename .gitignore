@@ -1,0 +1,14 @@
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.log
+*.tmp
+.env
+.env.*
+outputs/
+renders/
+credentials/
+cookies/
+__pycache__/
+*.pyc
+node_modules/
