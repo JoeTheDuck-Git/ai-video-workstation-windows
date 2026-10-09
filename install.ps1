@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [switch]$AllHyperFramesSkills,
-    [switch]$SkipDreamina
+    [switch]$SkipDreamina,
+    [string]$IreneSource,
+    [string]$IreneStage2Source
 )
 
 $ErrorActionPreference = 'Stop'
@@ -214,6 +216,16 @@ Install-HyperFrames
 Install-Dreamina
 Install-CanvasVideo
 Install-BundledSkills
+if ($IreneSource) {
+    Write-Step 'Importing selected Irene capability Skills'
+    & (Join-Path $RootDir 'scripts\import-irene_skills.ps1') -SourceDirectory $IreneSource
+    if ($LASTEXITCODE -ne 0) { throw 'Irene Skill import failed.' }
+}
+if ($IreneStage2Source) {
+    Write-Step 'Importing Irene stage-two beat editing Skill'
+    & (Join-Path $RootDir 'scripts\import-irene_stage2.ps1') -SourceDirectory $IreneStage2Source
+    if ($LASTEXITCODE -ne 0) { throw 'Irene stage-two Skill import failed.' }
+}
 
 Write-Step 'Running installation verification'
 & (Join-Path $RootDir 'scripts\verify.ps1') -AllowMissingDreamina:$SkipDreamina

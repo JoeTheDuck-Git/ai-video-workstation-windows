@@ -115,6 +115,26 @@ else { Fail 'video-delivery-qc Skill is not installed' }
 $canvasSkill = Join-Path $CodexHome 'skills\canvas-video-pipeline\SKILL.md'
 if (Test-Path $canvasSkill) { Pass 'canvas-video-pipeline Skill' } else { Fail 'canvas-video-pipeline Skill is not installed' }
 
+Write-Host "`n-- Optional local editing Skills --"
+foreach ($skillName in @('footage-sifter', 'caption-doctor', 'subtitle-translator', 'beat-cut-editor')) {
+    $skillFile = Join-Path $CodexHome "skills\$skillName\SKILL.md"
+    if (Test-Path $skillFile) { Pass "$skillName Skill" }
+    elseif ($skillName -eq 'beat-cut-editor') { Warn 'beat-cut-editor is not installed; run scripts\import-irene_stage2.ps1 with your local package path' }
+    else { Warn "$skillName is not installed; run scripts\import-irene_skills.ps1 with your local package path" }
+}
+$irenePython = Join-Path $env:USERPROFILE '.irene\venv\Scripts\python.exe'
+if (Test-Path $irenePython) {
+    & $irenePython -c 'import opencc, jieba' *> $null
+    if ($LASTEXITCODE -eq 0) { Pass 'Irene subtitle dependencies (opencc, jieba)' }
+    else { Warn 'Irene Python environment exists but opencc or jieba is missing' }
+}
+$beatSkill = Join-Path $CodexHome 'skills\beat-cut-editor\SKILL.md'
+if ((Test-Path $beatSkill) -and (Test-Path $irenePython)) {
+    & $irenePython -c 'import static_ffmpeg, scenedetect, cv2, PIL, numpy' *> $null
+    if ($LASTEXITCODE -eq 0) { Pass 'beat-cut core dependencies' }
+    else { Warn 'beat-cut-editor is installed but one or more core Python dependencies are missing' }
+}
+
 Write-Host ''
 if ($failures -gt 0) {
     Write-Host "Verification finished with $failures required failure(s)." -ForegroundColor Red

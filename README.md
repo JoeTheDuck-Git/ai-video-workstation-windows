@@ -9,6 +9,9 @@
 - 即夢畫布 `dreamina-canvas` CLI／Skill
 - 隔離的 `canvas-video` Canvas／Three.js renderer
 - `canvas-video-pipeline` 與 `video-delivery-qc` Skills
+- 可選擇從使用者合法持有的 Hello Irene 套件導入 `footage-sifter`、
+  `caption-doctor` 與 `subtitle-translator`，不把私人原始碼放進公開倉庫
+- 第二階段可另外導入 `beat-cut-editor`，Canvas Skill 同時提供原創的 B-roll 效果 API
 
 生成影片、快照、登入資料、Cookie、API Key 與 Python 虛擬環境都不會放入此資料夾。
 
@@ -46,6 +49,32 @@ Set-ExecutionPolicy -Scope Process Bypass
 ```powershell
 .\install.ps1 -SkipDreamina
 ```
+
+如果 Windows 電腦上已有合法取得並解壓縮的 `hello-irene-codex` 資料夾：
+
+```powershell
+.\install.ps1 -IreneSource "$env:USERPROFILE\Downloads\hello-irene-codex"
+```
+
+主程式已经安装时，也可单独导入：
+
+```powershell
+.\scripts\import-irene_skills.ps1 -SourceDirectory "$env:USERPROFILE\Downloads\hello-irene-codex"
+```
+
+导入器会备份既有同名 Skill，再复制到 `%USERPROFILE%\.codex\skills`；字幕依赖安装在
+`%USERPROFILE%\.irene\venv`，不会修改系统 Python。
+
+第二階段節拍剪輯：
+
+```powershell
+.\scripts\import-irene_stage2.ps1 -SourceDirectory "$env:USERPROFILE\Downloads\hello-irene-codex"
+# 或連同主安裝一起：
+.\install.ps1 -IreneStage2Source "$env:USERPROFILE\Downloads\hello-irene-codex"
+```
+
+核心剪輯依賴會裝入隔離環境；`faster-whisper` 與 `librosa` 保持按需安裝，避免首次安裝
+先下載大型模型。私有來源內的音樂、音效與程式只在使用者本機導入，不提交到公開倉庫。
 
 安裝器會把受管理的 runtime 放在：
 
@@ -99,6 +128,11 @@ canvas-video init .\motion-portrait --aspect portrait
 canvas-video render .\motion-portrait --still 2.5
 canvas-video render .\motion-portrait
 ```
+
+`canvas-video-pipeline\assets\broll-effects.js` 提供 documentary marker、minimal bars、
+comic burst、VHS、terminal、editorial、neon、glass、split-flap、kinetic type、shape morph、
+particle reveal、infinite zoom、parallax、timeline path、exploded view、預先計算音訊包絡、
+Bento 與 match cut 等可重現的 Canvas helper。
 
 橫式模板是原生 1920×1080，直式模板是原生 1080×1920。Canvas 與 HyperFrames 不共用 `node_modules`；Canvas 輸出作為媒體交給 HyperFrames，最終成片再以 QC 實測為準。
 
