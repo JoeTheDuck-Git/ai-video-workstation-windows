@@ -6,14 +6,15 @@
 - FFmpeg／FFprobe
 - Python 3.12（供影片 QC 使用）
 - HyperFrames CLI 與核心 Skills
-- 即夢畫布 `dreamina-canvas` CLI／Skill
 - 隔離的 `canvas-video` Canvas／Three.js renderer
 - `canvas-video-pipeline` 與 `video-delivery-qc` Skills
-- 可選擇從使用者合法持有的 Hello Irene 套件導入 `footage-sifter`、
-  `caption-doctor` 與 `subtitle-translator`，不把私人原始碼放進公開倉庫
-- 第二階段可另外導入 `beat-cut-editor`，Canvas Skill 同時提供原創的 B-roll 效果 API
+- 預設內建 `footage-sifter`、`caption-doctor` 與 `subtitle-translator`
+- Canvas Skill 同時提供 B-roll 效果 API，
+  並隨附重新命名為 **Tacky Templates** 的 10 種風格、31 個 HTML 模板與
+  31 效果展示頁
 
 生成影片、快照、登入資料、Cookie、API Key 與 Python 虛擬環境都不會放入此資料夾。
+基本安裝不會安裝、登入或驗證任何生成式媒體供應商；可使用本機素材、授權素材庫，或使用者自行選擇並另外安裝的生成工具。
 
 ## 系統需求
 
@@ -44,37 +45,17 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\install.ps1 -AllHyperFramesSkills
 ```
 
-如果暫時不安裝即夢：
+若只使用其中一個 AI 工具：
 
 ```powershell
-.\install.ps1 -SkipDreamina
+.\install.ps1 -CodexOnly
+.\install.ps1 -ClaudeOnly
 ```
 
-如果 Windows 電腦上已有合法取得並解壓縮的 `hello-irene-codex` 資料夾：
-
-```powershell
-.\install.ps1 -IreneSource "$env:USERPROFILE\Downloads\hello-irene-codex"
-```
-
-主程式已经安装时，也可单独导入：
-
-```powershell
-.\scripts\import-irene_skills.ps1 -SourceDirectory "$env:USERPROFILE\Downloads\hello-irene-codex"
-```
-
-导入器会备份既有同名 Skill，再复制到 `%USERPROFILE%\.codex\skills`；字幕依赖安装在
-`%USERPROFILE%\.irene\venv`，不会修改系统 Python。
-
-第二階段節拍剪輯：
-
-```powershell
-.\scripts\import-irene_stage2.ps1 -SourceDirectory "$env:USERPROFILE\Downloads\hello-irene-codex"
-# 或連同主安裝一起：
-.\install.ps1 -IreneStage2Source "$env:USERPROFILE\Downloads\hello-irene-codex"
-```
-
-核心剪輯依賴會裝入隔離環境；`faster-whisper` 與 `librosa` 保持按需安裝，避免首次安裝
-先下載大型模型。私有來源內的音樂、音效與程式只在使用者本機導入，不提交到公開倉庫。
+安裝器預設把五個內建 Skill 同時複製到 `%USERPROFILE%\.codex\skills\` 與
+`%USERPROFILE%\.claude\skills\`，
+並在 `%LOCALAPPDATA%\AI-Video-Workstation\python-venv\` 建立隔離 Python 環境，
+安裝 OpenCC 與 jieba，不會修改系統 Python 套件。
 
 安裝器會把受管理的 runtime 放在：
 
@@ -90,18 +71,12 @@ Set-ExecutionPolicy -Scope Process Bypass
 %LOCALAPPDATA%\AI-Video-Workstation\npm
 ```
 
-## 登入授權
+## 選配雲端授權
 
-安裝完成後雙擊 `login.cmd`，或執行：
+只有需要 HyperFrames／HeyGen 雲端功能時，才需要雙擊 `login.cmd`，或執行：
 
 ```powershell
 .\scripts\login.ps1
-```
-
-若也要登入 HyperFrames／HeyGen：
-
-```powershell
-.\scripts\login.ps1 -WithHyperFrames
 ```
 
 登入憑證留在各 CLI 的使用者設定目錄，不會複製進本專案。
@@ -115,7 +90,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\smoke-test.ps1
 ```
 
-安裝流程本身會執行完整環境檢查和 0.2 秒原生 1080×1920 H.264 冒煙測試。登入即夢前，授權狀態只會顯示警告。
+安裝流程本身會執行完整本機工具鏈檢查和 0.2 秒原生 1080×1920 H.264 冒煙測試，不檢查任何生成式媒體供應商的安裝或登入狀態。
 
 ## Canvas Video 使用方式
 
@@ -134,11 +109,28 @@ comic burst、VHS、terminal、editorial、neon、glass、split-flap、kinetic t
 particle reveal、infinite zoom、parallax、timeline path、exploded view、預先計算音訊包絡、
 Bento 與 match cut 等可重現的 Canvas helper。
 
+完整 Tacky 動態版型會安裝到已選擇 AI 工具的 Skill 目錄，例如：
+
+```text
+%USERPROFILE%\.codex\skills\canvas-video-pipeline\assets\tacky-templates\
+%USERPROFILE%\.claude\skills\canvas-video-pipeline\assets\tacky-templates\
+```
+
+其 renderer 使用獨立 `node_modules`。可用以下命令列出或複製素材：
+
+```powershell
+canvas-video tacky list
+canvas-video tacky copy-template vox .\title-card.html
+canvas-video tacky render-template .\title-card.html .\title-card.mp4 --dur=8 --ffmpeg=ffmpeg
+```
+
+`assets\tacky-scenes\` 只保留 31 項通用動效展示，用於挑選並重建當前故事需要的
+動效；不把展示頁當成完成場景直接交付。
+
 橫式模板是原生 1920×1080，直式模板是原生 1080×1920。Canvas 與 HyperFrames 不共用 `node_modules`；Canvas 輸出作為媒體交給 HyperFrames，最終成片再以 QC 實測為準。
 
 ## 安全與限制
 
 - 安裝器只會移除並更新 `%LOCALAPPDATA%\AI-Video-Workstation` 下由它管理的 Node 與 Canvas runtime。
 - FFmpeg 與 Python 經 WinGet 安裝，可能觸發 Windows 的標準權限提示。
-- 即夢安裝器每次從官方 HTTPS 網址下載；本專案無法替官方腳本維護固定 checksum，執行前可先檢閱 `install.ps1`。
 - 本版本已做原始碼、Node runtime 與 Skill 驗證，但仍應在實際 Windows x64／ARM64 主機各完成一次端到端驗收後再大規模散布。

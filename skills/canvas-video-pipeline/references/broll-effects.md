@@ -5,12 +5,10 @@ languages. They do not include or reproduce third-party HTML templates.
 
 ## Install in a scene
 
-Copy the bundled helper beside the scene, then load it before the scene script:
-
-```powershell
-$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
-Copy-Item (Join-Path $codexHome 'skills\canvas-video-pipeline\assets\broll-effects.js') '.\motion-asset\broll-effects.js'
-```
+Copy this Skill's bundled `assets/broll-effects.js` beside the scene as
+`./motion-asset/broll-effects.js`, then load it before the scene script. The active AI
+agent must resolve the current Skill directory instead of assuming a Codex- or
+Claude-specific installation path.
 
 ```html
 <script src="./broll-effects.js"></script>

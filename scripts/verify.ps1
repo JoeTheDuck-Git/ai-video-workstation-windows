@@ -1,11 +1,16 @@
 [CmdletBinding()]
-param([switch]$AllowMissingDreamina)
+param(
+    [switch]$CodexOnly,
+    [switch]$ClaudeOnly
+)
 
 $ErrorActionPreference = 'Continue'
 Set-StrictMode -Version Latest
 
 $StateDir = Join-Path $env:LOCALAPPDATA 'AI-Video-Workstation'
 $CodexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
+$ClaudeHome = if ($env:CLAUDE_HOME) { $env:CLAUDE_HOME } else { Join-Path $env:USERPROFILE '.claude' }
+$managedPython = Join-Path $StateDir 'python-venv\Scripts\python.exe'
 $paths = @(
     (Join-Path $StateDir 'node22-current'),
     (Join-Path $StateDir 'bin'),
@@ -15,6 +20,10 @@ $paths = @(
 ) | Where-Object { $_ }
 $env:Path = $paths -join ';'
 $failures = 0
+
+if ($CodexOnly -and $ClaudeOnly) {
+    throw '-CodexOnly and -ClaudeOnly cannot be combined.'
+}
 
 function Pass([string]$Message) { Write-Host "PASS  $Message" -ForegroundColor Green }
 function Warn([string]$Message) { Write-Host "WARN  $Message" -ForegroundColor Yellow }
@@ -63,33 +72,6 @@ if ($hyperframes) {
 }
 else { Fail 'hyperframes is not available' }
 
-$dreamina = Resolve-Command @('dreamina-canvas.exe', 'dreamina-canvas.cmd')
-if ($dreamina) {
-    Pass "Dreamina Canvas: $($dreamina.Source)"
-    $authText = (& $dreamina.Source auth status --format json 2>$null) -join "`n"
-    if ($authText) {
-        Write-Host $authText
-        try {
-            $auth = $authText | ConvertFrom-Json
-            $loggedIn = $false
-            if ($auth.PSObject.Properties.Name -contains 'data') {
-                if ($auth.data -and ($auth.data.PSObject.Properties.Name -contains 'loggedIn')) {
-                    $loggedIn = [bool]$auth.data.loggedIn
-                }
-            }
-            elseif ($auth.PSObject.Properties.Name -contains 'loggedIn') {
-                $loggedIn = [bool]$auth.loggedIn
-            }
-            if ($loggedIn) { Pass 'Dreamina authorization is available' }
-            else { Warn 'Dreamina is not authorized yet; run .\scripts\login.ps1' }
-        }
-        catch { Warn 'Dreamina authorization status did not return valid JSON' }
-    }
-    else { Warn 'Dreamina authorization status is unavailable' }
-}
-elseif ($AllowMissingDreamina) { Warn 'dreamina-canvas was intentionally skipped' }
-else { Fail 'dreamina-canvas is not available' }
-
 $canvasVideo = Resolve-Command @('canvas-video.cmd')
 if ($canvasVideo) {
     $canvasDoctorText = (& $canvasVideo.Source doctor --json 2>$null) -join "`n"
@@ -102,37 +84,43 @@ if ($canvasVideo) {
 }
 else { Fail 'canvas-video.cmd is not available' }
 
-$python = Resolve-Command @('py.exe', 'python.exe')
-$qcScript = Join-Path $CodexHome 'skills\video-delivery-qc\scripts\video_qc.py'
-if ($python -and (Test-Path $qcScript)) {
-    if ($python.Name -ieq 'py.exe') { & $python.Source -3 $qcScript --help *> $null }
-    else { & $python.Source $qcScript --help *> $null }
-    if ($LASTEXITCODE -eq 0) { Pass 'video-delivery-qc Skill' } else { Fail 'video-delivery-qc could not be loaded' }
-}
-elseif (-not $python) { Fail 'Python 3 is not available for video-delivery-qc' }
-else { Fail 'video-delivery-qc Skill is not installed' }
+function Test-SkillsRoot([string]$AgentName, [string]$SkillsRoot) {
+    Write-Host "`n-- $AgentName Skills --"
+    $qcScript = Join-Path $SkillsRoot 'video-delivery-qc\scripts\video_qc.py'
+    if ((Test-Path -LiteralPath $managedPython) -and (Test-Path -LiteralPath $qcScript)) {
+        & $managedPython $qcScript --help *> $null
+        if ($LASTEXITCODE -eq 0) { Pass "$AgentName`: video-delivery-qc" }
+        else { Fail "$AgentName`: video-delivery-qc could not be loaded" }
+    }
+    else { Fail "$AgentName`: video-delivery-qc is missing or its Python runtime is unavailable" }
 
-$canvasSkill = Join-Path $CodexHome 'skills\canvas-video-pipeline\SKILL.md'
-if (Test-Path $canvasSkill) { Pass 'canvas-video-pipeline Skill' } else { Fail 'canvas-video-pipeline Skill is not installed' }
+    foreach ($skillName in @('canvas-video-pipeline', 'footage-sifter', 'caption-doctor', 'subtitle-translator')) {
+        $skillFile = Join-Path $SkillsRoot "$skillName\SKILL.md"
+        if (Test-Path -LiteralPath $skillFile) { Pass "$AgentName`: $skillName" }
+        else { Fail "$AgentName`: $skillName is not installed" }
+    }
 
-Write-Host "`n-- Optional local editing Skills --"
-foreach ($skillName in @('footage-sifter', 'caption-doctor', 'subtitle-translator', 'beat-cut-editor')) {
-    $skillFile = Join-Path $CodexHome "skills\$skillName\SKILL.md"
-    if (Test-Path $skillFile) { Pass "$skillName Skill" }
-    elseif ($skillName -eq 'beat-cut-editor') { Warn 'beat-cut-editor is not installed; run scripts\import-irene_stage2.ps1 with your local package path' }
-    else { Warn "$skillName is not installed; run scripts\import-irene_skills.ps1 with your local package path" }
+    $tackyEngine = Join-Path $SkillsRoot 'canvas-video-pipeline\assets\tacky-templates\engine'
+    if (Test-Path -LiteralPath (Join-Path $tackyEngine 'node_modules\playwright-core\cli.js')) {
+        Pass "$AgentName`: Tacky Templates isolated renderer"
+    }
+    else { Fail "$AgentName`: Tacky Templates renderer dependencies are not installed" }
 }
-$irenePython = Join-Path $env:USERPROFILE '.irene\venv\Scripts\python.exe'
-if (Test-Path $irenePython) {
-    & $irenePython -c 'import opencc, jieba' *> $null
-    if ($LASTEXITCODE -eq 0) { Pass 'Irene subtitle dependencies (opencc, jieba)' }
-    else { Warn 'Irene Python environment exists but opencc or jieba is missing' }
+
+if (-not $ClaudeOnly) { Test-SkillsRoot 'Codex' (Join-Path $CodexHome 'skills') }
+if (-not $CodexOnly) { Test-SkillsRoot 'Claude Code' (Join-Path $ClaudeHome 'skills') }
+
+if ($canvasVideo) {
+    & $canvasVideo.Source tacky list *> $null
+    if ($LASTEXITCODE -eq 0) { Pass 'canvas-video tacky command' }
+    else { Fail 'canvas-video tacky command could not resolve an installed Skill' }
 }
-$beatSkill = Join-Path $CodexHome 'skills\beat-cut-editor\SKILL.md'
-if ((Test-Path $beatSkill) -and (Test-Path $irenePython)) {
-    & $irenePython -c 'import static_ffmpeg, scenedetect, cv2, PIL, numpy' *> $null
-    if ($LASTEXITCODE -eq 0) { Pass 'beat-cut core dependencies' }
-    else { Warn 'beat-cut-editor is installed but one or more core Python dependencies are missing' }
+
+Write-Host "`n-- Shared subtitle runtime --"
+if (Test-Path -LiteralPath $managedPython) {
+    & $managedPython -c 'import opencc, jieba' *> $null
+    if ($LASTEXITCODE -eq 0) { Pass 'subtitle dependencies (opencc, jieba)' }
+    else { Fail 'Managed subtitle dependencies are missing' }
 }
 
 Write-Host ''
@@ -140,5 +128,5 @@ if ($failures -gt 0) {
     Write-Host "Verification finished with $failures required failure(s)." -ForegroundColor Red
     exit 1
 }
-Write-Host 'Verification passed. Authorization warnings can be resolved with scripts\login.ps1.' -ForegroundColor Green
+Write-Host 'Verification passed.' -ForegroundColor Green
 exit 0

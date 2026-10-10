@@ -1,9 +1,8 @@
 [CmdletBinding()]
 param(
     [switch]$AllHyperFramesSkills,
-    [switch]$SkipDreamina,
-    [string]$IreneSource,
-    [string]$IreneStage2Source
+    [switch]$CodexOnly,
+    [switch]$ClaudeOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,6 +11,9 @@ Set-StrictMode -Version Latest
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw 'This installer is for Windows only.'
 }
+if ($CodexOnly -and $ClaudeOnly) {
+    throw '-CodexOnly and -ClaudeOnly cannot be combined.'
+}
 
 $RootDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $StateDir = Join-Path $env:LOCALAPPDATA 'AI-Video-Workstation'
@@ -19,7 +21,9 @@ $NodeDir = Join-Path $StateDir 'node22-current'
 $BinDir = Join-Path $StateDir 'bin'
 $NpmPrefix = Join-Path $StateDir 'npm'
 $CanvasDir = Join-Path $StateDir 'canvas-video'
+$PythonVenv = Join-Path $StateDir 'python-venv'
 $CodexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
+$ClaudeHome = if ($env:CLAUDE_HOME) { $env:CLAUDE_HOME } else { Join-Path $env:USERPROFILE '.claude' }
 
 function Write-Step([string]$Message) {
     Write-Host "`n==> $Message" -ForegroundColor Cyan
@@ -130,6 +134,26 @@ function Ensure-Python {
     }
 }
 
+function Install-PythonTools {
+    $venvPython = Join-Path $PythonVenv 'Scripts\python.exe'
+    if (-not (Test-Path -LiteralPath $venvPython)) {
+        Write-Step 'Creating the isolated AI Video Workstation Python environment'
+        $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
+        if ($launcher) {
+            Invoke-Checked $launcher.Source @('-3.12', '-m', 'venv', $PythonVenv)
+        }
+        else {
+            $python = Get-Command python.exe -ErrorAction Stop
+            Invoke-Checked $python.Source @('-m', 'venv', $PythonVenv)
+        }
+    }
+    Write-Step 'Installing subtitle dependencies'
+    Invoke-Checked $venvPython @(
+        '-m', 'pip', 'install', '--disable-pip-version-check',
+        'opencc-python-reimplemented>=0.1.7', 'jieba>=0.42'
+    )
+}
+
 function Install-HyperFrames {
     Write-Step 'Installing HyperFrames CLI'
     $npm = Join-Path $NodeDir 'npm.cmd'
@@ -141,25 +165,6 @@ function Install-HyperFrames {
     else {
         Invoke-Checked $hyperframes @('skills', 'update')
     }
-}
-
-function Install-Dreamina {
-    if ($SkipDreamina) {
-        Write-Host 'Skipping Dreamina Canvas installation by request.' -ForegroundColor Yellow
-        return
-    }
-    Write-Step 'Running the official Dreamina Canvas Windows installer'
-    $tempScript = Join-Path ([IO.Path]::GetTempPath()) ("dreamina-canvas-install-" + [guid]::NewGuid().ToString('N') + '.ps1')
-    try {
-        Invoke-WebRequest -UseBasicParsing -Uri 'https://jimeng.jianying.com/canvas-cli/install.ps1' -OutFile $tempScript
-        Invoke-Checked 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $tempScript)
-    }
-    finally {
-        if (Test-Path $tempScript) {
-            Remove-Item -LiteralPath $tempScript -Force
-        }
-    }
-    Refresh-ProcessPath
 }
 
 function Install-CanvasVideo {
@@ -188,16 +193,37 @@ function Install-CanvasVideo {
 }
 
 function Install-BundledSkills {
-    Write-Step 'Installing bundled Codex Skills'
-    $skillsRoot = Join-Path $CodexHome 'skills'
-    New-Item -ItemType Directory -Path $skillsRoot -Force | Out-Null
-    foreach ($skillName in @('canvas-video-pipeline', 'video-delivery-qc')) {
-        $source = Join-Path $RootDir "skills\$skillName"
-        $destination = Join-Path $skillsRoot $skillName
-        if (Test-Path $destination) {
-            Remove-Item -LiteralPath $destination -Recurse -Force
+    $targets = @()
+    if (-not $ClaudeOnly) { $targets += @{ Name = 'Codex'; Root = (Join-Path $CodexHome 'skills') } }
+    if (-not $CodexOnly) { $targets += @{ Name = 'Claude Code'; Root = (Join-Path $ClaudeHome 'skills') } }
+
+    foreach ($target in $targets) {
+        $skillsRoot = $target.Root
+        Write-Step "Installing bundled Skills for $($target.Name)"
+        New-Item -ItemType Directory -Path $skillsRoot -Force | Out-Null
+        foreach ($skillName in @('canvas-video-pipeline', 'video-delivery-qc', 'footage-sifter', 'caption-doctor', 'subtitle-translator')) {
+            $source = Join-Path $RootDir "skills\$skillName"
+            $destination = Join-Path $skillsRoot $skillName
+            if (Test-Path $destination) {
+                Remove-Item -LiteralPath $destination -Recurse -Force
+            }
+            Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force
         }
-        Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force
+
+        $tackyEngine = Join-Path $skillsRoot 'canvas-video-pipeline\assets\tacky-templates\engine'
+        $tackyLock = Join-Path $tackyEngine 'package-lock.json'
+        if (Test-Path -LiteralPath $tackyLock) {
+            Write-Step "Preparing the isolated Tacky Templates renderer for $($target.Name)"
+            $npm = Join-Path $NodeDir 'npm.cmd'
+            Push-Location $tackyEngine
+            try {
+                Invoke-Checked $npm @('ci', '--no-audit', '--no-fund')
+                Invoke-Checked (Join-Path $NodeDir 'node.exe') @(
+                    (Join-Path $tackyEngine 'node_modules\playwright-core\cli.js'), 'install', 'chromium'
+                )
+            }
+            finally { Pop-Location }
+        }
     }
 }
 
@@ -212,23 +238,22 @@ Write-Host "npm: $(& (Join-Path $NodeDir 'npm.cmd') --version)"
 
 Ensure-MediaTools
 Ensure-Python
+Install-PythonTools
 Install-HyperFrames
-Install-Dreamina
 Install-CanvasVideo
 Install-BundledSkills
-if ($IreneSource) {
-    Write-Step 'Importing selected Irene capability Skills'
-    & (Join-Path $RootDir 'scripts\import-irene_skills.ps1') -SourceDirectory $IreneSource
-    if ($LASTEXITCODE -ne 0) { throw 'Irene Skill import failed.' }
-}
-if ($IreneStage2Source) {
-    Write-Step 'Importing Irene stage-two beat editing Skill'
-    & (Join-Path $RootDir 'scripts\import-irene_stage2.ps1') -SourceDirectory $IreneStage2Source
-    if ($LASTEXITCODE -ne 0) { throw 'Irene stage-two Skill import failed.' }
-}
 
 Write-Step 'Running installation verification'
-& (Join-Path $RootDir 'scripts\verify.ps1') -AllowMissingDreamina:$SkipDreamina
+$verifyScript = Join-Path $RootDir 'scripts\verify.ps1'
+if ($CodexOnly) {
+    & $verifyScript -CodexOnly
+}
+elseif ($ClaudeOnly) {
+    & $verifyScript -ClaudeOnly
+}
+else {
+    & $verifyScript
+}
 if ($LASTEXITCODE -ne 0) {
     throw 'Verification reported one or more required failures.'
 }
@@ -240,5 +265,5 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "`nInstallation finished." -ForegroundColor Green
-Write-Host 'Next: run .\scripts\login.ps1 to authorize Dreamina Canvas.'
-Write-Host 'Restart Codex after installation so it discovers the new Skills.'
+Write-Host 'Optional: run .\scripts\login.ps1 only if you need HyperFrames / HeyGen cloud features.'
+Write-Host 'Restart Codex and/or Claude Code after installation so they discover the new Skills.'

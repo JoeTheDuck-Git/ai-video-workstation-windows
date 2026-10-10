@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$WithHyperFrames)
+param()
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -21,27 +21,12 @@ function Invoke-Checked([string]$FilePath, [string[]]$Arguments) {
     }
 }
 
-$dreamina = Get-Command dreamina-canvas.exe -ErrorAction SilentlyContinue
-if (-not $dreamina) {
-    $dreamina = Get-Command dreamina-canvas.cmd -ErrorAction SilentlyContinue
+$hyperframes = Get-Command hyperframes.cmd -ErrorAction SilentlyContinue
+if (-not $hyperframes) {
+    throw 'hyperframes is not installed. Run install.cmd first.'
 }
-if (-not $dreamina) {
-    throw 'dreamina-canvas is not installed. Run install.cmd first.'
-}
-
-Write-Host 'Starting Dreamina Canvas browser authorization...' -ForegroundColor Cyan
-Invoke-Checked $dreamina.Source @('auth', 'login')
-Invoke-Checked $dreamina.Source @('auth', 'status', '--format', 'json')
-Invoke-Checked $dreamina.Source @('auth', 'account', '--format', 'json')
-
-if ($WithHyperFrames) {
-    $hyperframes = Get-Command hyperframes.cmd -ErrorAction SilentlyContinue
-    if (-not $hyperframes) {
-        throw 'hyperframes is not installed. Run install.cmd first.'
-    }
-    Write-Host "`nStarting HyperFrames / HeyGen authorization..." -ForegroundColor Cyan
-    Invoke-Checked $hyperframes.Source @('auth', 'login')
-    Invoke-Checked $hyperframes.Source @('auth', 'status', '--json')
-}
+Write-Host 'Starting optional HyperFrames / HeyGen authorization...' -ForegroundColor Cyan
+Invoke-Checked $hyperframes.Source @('auth', 'login')
+Invoke-Checked $hyperframes.Source @('auth', 'status', '--json')
 
 Write-Host "`nAuthorization completed. No credentials were copied into this folder." -ForegroundColor Green
